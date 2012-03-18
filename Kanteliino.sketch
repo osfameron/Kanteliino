@@ -1,0 +1,119 @@
+/* Kanteliino or KanTele
+ *
+ * a Theremin-like electronic instrument built with:
+ *     - an Arduino
+ *     - a bank of LEDs controlled by a 74HC595
+ *     - a Piezo speaker
+ *     - a distance sensor
+ *
+ * This project is a mashup of
+ *     - CIRC-05  to control LEDs
+ *     - CIRC-??  to read potentiometer (distance sensor is dropin replacement)
+ *     - http://www.arduino.cc/en/Tutorial/Melody
+ */
+
+//Pin Definitions
+//The 74HC595 uses a serial communication 
+//link which has three pins
+int data = 2; 
+int clock = 3;
+int latch = 4;
+
+// Pin for the potentiometer/distance sensor
+int sensorPin = 0;
+
+// Pin for the piezo speaker
+int speakerPin = 9;
+
+//Used for single LED manipulation
+int ledState = 0;
+const int ON = HIGH;
+const int OFF = LOW;
+
+void playTone(int tone, int duration) {
+  for (long i = 0; i < duration * 1000L; i += tone * 2) {
+    digitalWrite(speakerPin, HIGH);
+    delayMicroseconds(tone);
+    digitalWrite(speakerPin, LOW);
+    delayMicroseconds(tone);
+  }
+}
+
+int TONES[] = { 1915,1806,1516,1430,1273,1201,1069,951,897,753,711,632,597,531,472 };
+int NTONES = 15;
+int MAXREADING = 700;
+int FRET = MAXREADING / NTONES;
+int HALFFRET = FRET / 2;
+
+int prevTone = 0;
+void playNote(int raw, int duration) {
+  // back of envelope calculations to get the Phrygian scale...
+  // C 1915 - D♭ 1807 - E 1519 - F 1432 - G 1275 - A♭ 1203 - B♭ 1072 - C 956
+
+  int note = map(raw, 0, 700, 0, 15);
+  updateLEDs(1 << (note/2)); // switch on just 1 LED
+
+  if (note) {
+    Serial.println(note);
+    int tone = TONES[note-1];
+    Serial.println(tone);
+    int dist = raw - (note * FRET);
+    Serial.println(dist);
+    int next = TONES[note];
+    Serial.println(next);
+    int halftone = (next - tone) / 2;
+    Serial.println(halftone);
+    if (dist < HALFFRET) {
+        Serial.println("<");
+        tone += halftone * pow(dist / HALFFRET, 2);
+    }
+    else {
+       Serial.println(">"); 
+       int under = FRET - dist;
+        tone = next - halftone * pow(under / HALFFRET, 2);
+    }
+    playTone(tone, duration);
+  }
+  else {
+    delay(duration);
+  }
+}
+
+void setup() {
+  pinMode(speakerPin, OUTPUT);
+
+  pinMode(data, OUTPUT);
+  pinMode(clock, OUTPUT);  
+  pinMode(latch, OUTPUT);  
+
+  Serial.begin(9600);
+  Serial.println("Starting up!");
+}
+
+void loop () {
+  int sensorValue = analogRead(sensorPin);
+  playNote(sensorValue, 50);
+}
+
+
+int n2b (int n)
+{
+   int b = 0;
+   int l = 1;
+   for (int i=0; i<n; i++) {
+       b += l;
+       l <<= 1;
+   }
+   return b;
+}
+
+/*
+ * updateLEDs() - sends the LED states set in ledStates to the 74HC595
+ * sequence
+ */
+void updateLEDs(int value){
+  digitalWrite(latch, LOW);     //Pulls the chips latch low
+  shiftOut(data, clock, MSBFIRST, value); //Shifts out the 8 bits to the shift register
+  digitalWrite(latch, HIGH);   //Pulls the latch high displaying the data
+}
+
